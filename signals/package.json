@@ -1,0 +1,22 @@
+{
+  "name": "signals-globe",
+  "version": "1.0.0",
+  "description": "A live 3D globe of public signals: aircraft, satellites, earthquakes and world radio. Keyless, serverless, open source.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "esbuild js/main.js --bundle --minify --format=iife --target=es2020 --outfile=dist/app.js --legal-comments=none",
+    "watch": "esbuild js/main.js --bundle --format=iife --target=es2020 --outfile=dist/app.js --sourcemap --watch",
+    "assets": "node scripts/copy-assets.mjs",
+    "serve": "npx --yes serve . -p 4173"
+  },
+  "dependencies": {
+    "globe.gl": "^2.46.2",
+    "satellite.js": "^5.0.0",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0"
+  }
+}

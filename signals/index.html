@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SIGNALS — live open-source intelligence on a 3D globe</title>
+<meta name="description" content="A live 3D globe of public signals: aircraft, satellites, earthquakes and world radio. No API keys, no server, runs entirely in your browser.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="SIGNALS">
+<meta property="og:description" content="Live aircraft, satellites, earthquakes and world radio on one 3D globe. Keyless and open source.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%234cc9f0' stroke-width='2'/><ellipse cx='16' cy='16' rx='13' ry='5' fill='none' stroke='%23ffb703' stroke-width='1.5'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="globe" aria-hidden="true"></div>
+<div id="scanlines" hidden></div>
+
+<!-- ───────────────────────────── boot ───────────────────────────── -->
+<div id="boot">
+  <div class="boot-inner">
+    <h1 class="wordmark">SIGNALS</h1>
+    <p class="boot-sub">Live open-source intelligence · public data only · no keys</p>
+    <ul id="boot-log"></ul>
+  </div>
+</div>
+
+<!-- ───────────────────────────── header ─────────────────────────── -->
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SIGNALS</span>
+    <span class="brand-sub">open-source intelligence globe</span>
+  </div>
+  <div id="feedchips" class="chips"></div>
+  <div class="top-actions">
+    <button id="btn-share" class="btn ghost" title="Copy a link to this exact view">SHARE VIEW</button>
+    <a class="btn ghost" id="btn-repo" href="https://github.com/Randstaddigitalglobal/demo-repo" target="_blank" rel="noopener">SOURCE</a>
+  </div>
+</header>
+
+<!-- ───────────────────────────── left panel ─────────────────────── -->
+<aside id="panel-left" class="panel">
+  <button class="panel-toggle" data-target="panel-left" aria-label="Collapse layers panel">LAYERS</button>
+  <div class="panel-body">
+
+    <section class="grp">
+      <h2>Live layers</h2>
+      <ul class="layers" id="layer-list">
+        <li>
+          <label class="row"><input type="checkbox" id="ly-flights" checked>
+            <span class="dot" id="dot-flights"></span>
+            <span class="lname">Aircraft</span><span class="lcount" id="ct-flights">—</span></label>
+          <p class="hint" id="hint-flights">ADS-B within 250&nbsp;nm of the view centre.</p>
+        </li>
+        <li>
+          <label class="row"><input type="checkbox" id="ly-sats" checked>
+            <span class="dot" id="dot-sats"></span>
+            <span class="lname">Satellites</span><span class="lcount" id="ct-sats">—</span></label>
+          <div class="subgrid" id="sat-groups"></div>
+        </li>
+        <li>
+          <label class="row"><input type="checkbox" id="ly-quakes" checked>
+            <span class="dot" id="dot-quakes"></span>
+            <span class="lname">Seismic</span><span class="lcount" id="ct-quakes">—</span></label>
+          <div class="seg" id="quake-feed">
+            <button data-feed="day" class="on">M2.5+ / 24h</button>
+            <button data-feed="week">M4.5+ / 7d</button>
+          </div>
+        </li>
+        <li>
+          <label class="row"><input type="checkbox" id="ly-radio">
+            <span class="dot" id="dot-radio"></span>
+            <span class="lname">World radio</span><span class="lcount" id="ct-radio">—</span></label>
+          <p class="hint">Every marker is a real transmitter. Click one to listen.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="grp">
+      <h2>View</h2>
+      <div class="seg wide" id="basemap">
+        <button data-base="night" class="on">NIGHT</button>
+        <button data-base="day">DAY</button>
+      </div>
+      <div class="controls-row">
+        <button class="btn" id="btn-locate">MY POSITION</button>
+        <button class="btn" id="btn-tour">TOUR</button>
+      </div>
+      <label class="row plain"><input type="checkbox" id="opt-rotate" checked><span class="lname">Auto-rotate</span></label>
+      <select id="place-jump" aria-label="Jump to a city">
+        <option value="">Jump to…</option>
+      </select>
+    </section>
+
+    <section class="grp" id="launch-grp">
+      <h2>Next launches</h2>
+      <ul class="launches" id="launch-list"><li class="muted">loading…</li></ul>
+    </section>
+
+  </div>
+</aside>
+
+<!-- ───────────────────────────── right panel ────────────────────── -->
+<aside id="panel-right" class="panel right">
+  <button class="panel-toggle" data-target="panel-right" aria-label="Collapse contacts panel">CONTACTS</button>
+  <div class="panel-body">
+    <div class="tabs">
+      <button class="tab on" data-tab="roster">ROSTER</button>
+      <button class="tab" data-tab="detail">DETAIL</button>
+    </div>
+    <div class="tabpane on" id="pane-roster">
+      <p class="scanline-note" id="scan-note">—</p>
+      <ul class="roster" id="roster"></ul>
+    </div>
+    <div class="tabpane" id="pane-detail">
+      <div id="detail"><p class="muted">Click anything on the globe — an aircraft, a satellite, a quake, a radio station.</p></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ───────────────────────────── bottom bar ─────────────────────── -->
+<footer id="bottombar">
+  <div class="sensors" id="sensors"></div>
+  <div class="readout">
+    <span id="pov-readout">—</span>
+    <span class="sep">·</span>
+    <span id="clock">--:--:--Z</span>
+    <span class="sep">·</span>
+    <span class="note">altitudes exaggerated ×16 for legibility</span>
+  </div>
+</footer>
+
+<div id="nowplaying" hidden>
+  <span class="eq"><i></i><i></i><i></i></span>
+  <span id="np-name">—</span>
+  <button id="np-stop" aria-label="Stop playback">STOP</button>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="dist/app.js"></script>
+</body>
+</html>
