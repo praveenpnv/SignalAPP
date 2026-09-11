@@ -91,6 +91,7 @@ export class FlightLayer {
         this.source = src.name;
         this.lastUpdate = Date.now();
         this.status = 'live';
+        this.blocked = false;
         this._inflight = false;
         return;
       } catch (err) {
@@ -98,7 +99,12 @@ export class FlightLayer {
       }
     }
 
+    // Every network refused or timed out. Almost always this is CORS:
+    // the ADS-B hosts serve public data but send no
+    // Access-Control-Allow-Origin header, so the browser blocks the read.
+    // See ADSB_PROXY in config.js.
     this.status = 'unreachable';
+    this.blocked = true;
     this._inflight = false;
   }
 
@@ -214,6 +220,10 @@ export class FlightLayer {
 
     const found = new Map();
     const tried = [];
+    // Did any network actually answer? "No aircraft matched" and "nobody
+    // would talk to us" are completely different answers and the UI must
+    // not present the second as the first.
+    let reached = false;
 
     for (const cand of candidates) {
       for (const src of ordered) {
@@ -222,6 +232,7 @@ export class FlightLayer {
         tried.push(`${src.name}/${cand.kind}`);
         try {
           const data = await fetchJSON(build(encodeURIComponent(cand.value)), { timeout: 8000 });
+          reached = true;
           const raw = data.ac || data.aircraft || [];
           if (!raw.length) break;          // this network answered, just no match
           this._ingest(raw);
@@ -231,6 +242,7 @@ export class FlightLayer {
             if (c) found.set(c.id, c);
           }
           this.source = src.name;
+          this.blocked = false;
           break;                            // got an answer, next candidate
         } catch {
           // try the next network for this same candidate
@@ -239,7 +251,8 @@ export class FlightLayer {
       if (found.size) break;                // first candidate that hits wins
     }
 
-    return { query, results: [...found.values()], tried };
+    if (!reached) this.blocked = true;
+    return { query, results: [...found.values()], tried, reached };
   }
 
   // ------------------------------------------------------------ follow

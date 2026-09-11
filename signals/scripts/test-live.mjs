@@ -32,7 +32,13 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error' && !/ERR_TUNNEL|favicon/.test(m.text())) errors.push('console: ' + m.text()); });
+let expectFailures = false;   // set true for the deliberate outage case
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  if (/ERR_TUNNEL|favicon/.test(m.text())) return;
+  if (expectFailures && /ERR_FAILED|Failed to load resource/.test(m.text())) return;
+  errors.push('console: ' + m.text());
+});
 
 let adsbHits = 0;
 let hexHits = 0;
@@ -276,7 +282,21 @@ await page.click('#btn-find');
 await page.waitForTimeout(2200);
 const byReg = await page.evaluate(() => window.SIGNALS.flights.followMeta?.callsign);
 
-console.log(JSON.stringify({ afterLoad, drift, heading, detail, satSel, satDetail, radioState, mobile: { atLoad: m1, afterLeft: m2, afterRight: m3 }, search, followTick, noMatch, released, recent, byReg, adsbHits, hexHits, pointPaths: [...new Set(seenPaths.filter((p) => /lat\/|point\//.test(p)))].slice(0, 3), errors }, null, 1));
+// ── transport failure must not be reported as "flight not found" ──
+// Simulate exactly what CORS does to us: the request never completes.
+expectFailures = true;
+await page.route(/adsb|airplanes\.live/, (route) => route.abort('failed'));
+
+await page.fill('#q', 'AIC503');
+await page.click('#btn-find');
+await page.waitForTimeout(6000);
+const blocked = await page.evaluate(() => ({
+  text: document.querySelector('#search-drop')?.textContent.trim().slice(0, 70),
+  isBlockedStyle: !!document.querySelector('.sd-blocked'),
+  layerBlocked: window.SIGNALS.flights.blocked,
+}));
+
+console.log(JSON.stringify({ afterLoad, drift, heading, detail, satSel, satDetail, radioState, mobile: { atLoad: m1, afterLeft: m2, afterRight: m3 }, search, followTick, noMatch, released, recent, byReg, blocked, adsbHits, hexHits, pointPaths: [...new Set(seenPaths.filter((p) => /lat\/|point\//.test(p)))].slice(0, 3), errors }, null, 1));
 
 await browser.close();
 server.close();

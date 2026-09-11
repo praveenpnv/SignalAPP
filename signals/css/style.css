@@ -356,6 +356,13 @@ button, input, select { font: inherit; color: inherit; }
 .lcount { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
 
 .hint { margin: 5px 0 0 22px; font-size: 10.5px; color: var(--ink-faint); line-height: 1.45; }
+.hint.warn { color: var(--accent-warm); }
+.hint code, .sd-empty code {
+  font-family: var(--mono); font-size: 0.94em;
+  background: rgba(140, 170, 210, 0.12); padding: 0 3px; border-radius: 2px;
+}
+.sd-empty.sd-blocked { border-left: 2px solid var(--accent-warm); }
+.sd-empty b { color: var(--accent-warm); }
 
 .subgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 7px 0 0 22px; }
 .subgrid label {

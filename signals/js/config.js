@@ -8,6 +8,26 @@
 
 export const GLOBE_RADIUS = 100;
 
+/**
+ * ADS-B CORS proxy.
+ *
+ * The aircraft networks serve public data but send no
+ * `Access-Control-Allow-Origin` header, so a browser will not let this
+ * page read their responses. Satellites, earthquakes and radio all send
+ * the header and work directly; aircraft do not and cannot.
+ *
+ * Leave this empty and the aircraft layer stays dark, saying so plainly.
+ * Set it to your own deployed `worker/adsb-proxy.js` URL (Cloudflare's
+ * free tier covers this many times over) and the layer comes alive:
+ *
+ *   export const ADSB_PROXY = 'https://signals-adsb.yourname.workers.dev';
+ */
+export const ADSB_PROXY = '';
+
+/** Route a URL through the proxy when one is configured. */
+export const via = (url) =>
+  ADSB_PROXY ? `${ADSB_PROXY.replace(/\/$/, '')}/?u=${encodeURIComponent(url)}` : url;
+
 /** Earth textures, served from a CORS-friendly CDN. */
 export const TEXTURES = {
   globe: 'https://cdn.jsdelivr.net/npm/three-globe@2.31.0/example/img/earth-night.jpg',
@@ -35,26 +55,26 @@ export const FLIGHT_SOURCES = [
   {
     name: 'adsb.fi',
     point: (lat, lon, nm) =>
-      `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`,
-    callsign: (cs) => `https://opendata.adsb.fi/api/v2/callsign/${cs}`,
-    reg: (r) => `https://opendata.adsb.fi/api/v2/registration/${r}`,
-    hex: (h) => `https://opendata.adsb.fi/api/v2/hex/${h}`,
+      via(`https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`),
+    callsign: (cs) => via(`https://opendata.adsb.fi/api/v2/callsign/${cs}`),
+    reg: (r) => via(`https://opendata.adsb.fi/api/v2/registration/${r}`),
+    hex: (h) => via(`https://opendata.adsb.fi/api/v2/hex/${h}`),
   },
   {
     name: 'airplanes.live',
     point: (lat, lon, nm) =>
-      `https://api.airplanes.live/v2/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${nm}`,
-    callsign: (cs) => `https://api.airplanes.live/v2/callsign/${cs}`,
-    reg: (r) => `https://api.airplanes.live/v2/reg/${r}`,
-    hex: (h) => `https://api.airplanes.live/v2/hex/${h}`,
+      via(`https://api.airplanes.live/v2/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${nm}`),
+    callsign: (cs) => via(`https://api.airplanes.live/v2/callsign/${cs}`),
+    reg: (r) => via(`https://api.airplanes.live/v2/reg/${r}`),
+    hex: (h) => via(`https://api.airplanes.live/v2/hex/${h}`),
   },
   {
     name: 'adsb.lol',
     point: (lat, lon, nm) =>
-      `https://api.adsb.lol/v2/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`,
-    callsign: (cs) => `https://api.adsb.lol/v2/callsign/${cs}`,
-    reg: (r) => `https://api.adsb.lol/v2/reg/${r}`,
-    hex: (h) => `https://api.adsb.lol/v2/hex/${h}`,
+      via(`https://api.adsb.lol/v2/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`),
+    callsign: (cs) => via(`https://api.adsb.lol/v2/callsign/${cs}`),
+    reg: (r) => via(`https://api.adsb.lol/v2/reg/${r}`),
+    hex: (h) => via(`https://api.adsb.lol/v2/hex/${h}`),
   },
 ];
 

@@ -70,6 +70,7 @@ async function boot() {
   ui.bootLog('acquiring air picture…');
   flights.setFocus(start.lat, start.lng);
   flights.start();
+  warnIfAircraftBlocked();
 
   loadLaunches();
 
@@ -434,6 +435,32 @@ function wireControls() {
   });
 }
 
+/**
+ * Say it out loud, once, if the aircraft feeds cannot be reached. A
+ * silently empty layer reads as "quiet skies", which is a lie.
+ */
+function warnIfAircraftBlocked() {
+  let said = false;
+  const check = setInterval(() => {
+    if (said || !flights.enabled) return;
+    if (flights.blocked) {
+      said = true;
+      clearInterval(check);
+      ui.toast(
+        'Aircraft feeds unreachable — the ADS-B networks send no CORS header. ' +
+          'Set ADSB_PROXY in config.js (see README). Other layers are unaffected.',
+        11000
+      );
+      $('#hint-flights').innerHTML =
+        'Blocked by CORS — the ADS-B hosts send no ' +
+        '<code>Access-Control-Allow-Origin</code> header. Deploy ' +
+        '<code>worker/adsb-proxy.js</code> and set <code>ADSB_PROXY</code>.';
+      $('#hint-flights').classList.add('warn');
+    }
+  }, 3000);
+  setTimeout(() => clearInterval(check), 120_000);
+}
+
 // ───────────────────────────────────────────────────────── search
 
 function recentSearches() {
@@ -499,7 +526,7 @@ function wireSearch() {
     ui.renderSearchDrop({ state: 'searching', query: q }, handlers);
 
     try {
-      const { results } = await flights.search(q);
+      const { results, reached } = await flights.search(q);
       // Give the render loop a tick so renderColor is populated.
       flights.positions();
       const enriched = results
@@ -507,7 +534,7 @@ function wireSearch() {
         .filter(Boolean);
 
       if (!enriched.length) {
-        ui.renderSearchDrop({ state: 'empty', query: q }, handlers);
+        ui.renderSearchDrop({ state: reached ? 'empty' : 'blocked', query: q }, handlers);
       } else {
         rememberSearch(q.toUpperCase());
         if (enriched.length === 1) {

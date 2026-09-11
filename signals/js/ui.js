@@ -247,6 +247,19 @@ export function renderSearchDrop({ state, results = [], query = '', recent = [] 
     return;
   }
 
+  if (state === 'blocked') {
+    el.innerHTML = `<div class="sd-empty sd-blocked">
+      <b>Couldn't reach any ADS-B network.</b><br>
+      This is not the same as "no such flight" — the request never completed.
+      The public aircraft feeds send no <code>Access-Control-Allow-Origin</code>
+      header, so a browser refuses to let this page read them. Satellites,
+      earthquakes and radio do send it and are unaffected.<br>
+      The fix is a small proxy you own: deploy <code>worker/adsb-proxy.js</code>
+      and set <code>ADSB_PROXY</code> in <code>js/config.js</code>. See the README.
+    </div>`;
+    return;
+  }
+
   if (state === 'empty') {
     el.innerHTML = `<div class="sd-empty">
       Nothing on the network matching <b>${escapeHtml(query)}</b>.<br>
