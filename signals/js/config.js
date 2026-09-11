@@ -18,30 +18,54 @@ export const TEXTURES = {
 /**
  * Live ADS-B aircraft feeds, tried in order until one answers.
  *
- * These are community receiver networks. They all expose the same
- * "readsb" JSON shape (an `ac` array), so one parser covers all of them.
- * Radius is capped at 250 nautical miles by the upstream APIs.
+ * These are community receiver networks sharing the same "readsb" JSON
+ * shape (an `ac` array), so one parser covers all of them. Note the path
+ * differences: adsb.fi moved its radius query to v3 while keeping the
+ * lookup endpoints on v2, and the three networks disagree on whether
+ * registration lookup is /reg/ or /registration/.
+ *
+ * Radius is capped at 250 nautical miles upstream. The lookup endpoints
+ * have no such limit — they search the whole network, which is what makes
+ * "find me this flight" work from any camera position.
+ *
+ * All three ask for 1 request per second at most. Respect that if you fork
+ * this; the polling intervals below are set well inside it.
  */
 export const FLIGHT_SOURCES = [
   {
     name: 'adsb.fi',
-    url: (lat, lon, nm) =>
-      `https://opendata.adsb.fi/api/v2/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`,
+    point: (lat, lon, nm) =>
+      `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`,
+    callsign: (cs) => `https://opendata.adsb.fi/api/v2/callsign/${cs}`,
+    reg: (r) => `https://opendata.adsb.fi/api/v2/registration/${r}`,
+    hex: (h) => `https://opendata.adsb.fi/api/v2/hex/${h}`,
   },
   {
     name: 'airplanes.live',
-    url: (lat, lon, nm) =>
+    point: (lat, lon, nm) =>
       `https://api.airplanes.live/v2/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${nm}`,
+    callsign: (cs) => `https://api.airplanes.live/v2/callsign/${cs}`,
+    reg: (r) => `https://api.airplanes.live/v2/reg/${r}`,
+    hex: (h) => `https://api.airplanes.live/v2/hex/${h}`,
   },
   {
     name: 'adsb.lol',
-    url: (lat, lon, nm) =>
+    point: (lat, lon, nm) =>
       `https://api.adsb.lol/v2/lat/${lat.toFixed(3)}/lon/${lon.toFixed(3)}/dist/${nm}`,
+    callsign: (cs) => `https://api.adsb.lol/v2/callsign/${cs}`,
+    reg: (r) => `https://api.adsb.lol/v2/reg/${r}`,
+    hex: (h) => `https://api.adsb.lol/v2/hex/${h}`,
   },
 ];
 
 export const FLIGHT_RADIUS_NM = 250;
 export const FLIGHT_POLL_MS = 20_000;
+
+/** How often a followed aircraft is re-queried by hex, network-wide. */
+export const FOLLOW_POLL_MS = 12_000;
+
+/** A followed contact is kept on screen this long after its last fix. */
+export const FOLLOW_GRACE_MS = 240_000;
 
 /**
  * Satellite catalogues from CelesTrak, as classic TLE text.

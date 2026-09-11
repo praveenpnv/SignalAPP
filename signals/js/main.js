@@ -23,8 +23,11 @@ const sats = new SatelliteLayer();
 const quakes = new QuakeLayer();
 const radio = new RadioLayer();
 
+const RECENT_KEY = 'recent-searches';
+
 const state = {
   selected: null,
+  searching: false,
   observer: null,
   observerName: null,
   sensor: 'OPTICAL',
@@ -219,6 +222,13 @@ function hudTick() {
 
   if (state.selected?.kind === 'flight') refreshSelected();
 
+  if (flights.followMeta) {
+    ui.setFollowing(flights.followMeta);
+    rideFollowed();
+  } else {
+    ui.setFollowing(null);
+  }
+
   writeHash();
 }
 
@@ -294,6 +304,7 @@ const scanElsewhere = debounce((lat, lng) => {
 
 function onCameraSettle(pov) {
   if (!flights.enabled) return;
+  if (flights.followId) return;   // the camera is riding a contact
   if (!flights.focus || haversineKm(flights.focus, pov) > 150) {
     scanElsewhere(pov.lat, pov.lng);
   }
@@ -345,6 +356,14 @@ function wireControls() {
 
   $('#opt-rotate').addEventListener('change', (e) => globe.setAutoRotate(e.target.checked));
 
+  wireSearch();
+
+  $('#fl-stop').addEventListener('click', () => {
+    flights.unfollow();
+    ui.setFollowing(null);
+    ui.toast('released');
+  });
+
   $('#btn-locate').addEventListener('click', locate);
   $('#btn-tour').addEventListener('click', toggleTour);
   $('#btn-share').addEventListener('click', share);
@@ -389,6 +408,11 @@ function wireControls() {
   window.matchMedia('(max-width: 720px)').addEventListener('change', applyNarrowDefault);
 
   document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !e.target.matches('input, select, textarea')) {
+      e.preventDefault();
+      $('#q').focus();
+      return;
+    }
     if (e.target.matches('input, select, textarea')) return;
     const n = Number(e.key);
     if (n >= 1 && n <= SENSORS.length) return setSensor(SENSORS[n - 1].key);
@@ -408,6 +432,139 @@ function wireControls() {
         $('#opt-rotate').click();
     }
   });
+}
+
+// ───────────────────────────────────────────────────────── search
+
+function recentSearches() {
+  return cache.get(RECENT_KEY, 90 * 86400_000) || [];
+}
+
+function rememberSearch(q) {
+  const list = [q, ...recentSearches().filter((r) => r !== q)].slice(0, 6);
+  cache.set(RECENT_KEY, list);
+}
+
+function wireSearch() {
+  const form = $('#searchbar');
+  const input = $('#q');
+
+  const handlers = {
+    onPick: (id) => {
+      const hit = flights.contacts.get(id);
+      if (hit) lockOn(hit);
+      ui.renderSearchDrop({ state: 'hidden' }, handlers);
+      input.blur();
+    },
+    onRecent: (q) => {
+      input.value = q;
+      runSearch(q);
+    },
+  };
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    runSearch(input.value);
+  });
+
+  input.addEventListener('focus', () => {
+    if (!input.value.trim()) {
+      ui.renderSearchDrop({ state: 'recent', recent: recentSearches() }, handlers);
+    }
+  });
+
+  input.addEventListener('input', () => {
+    if (!input.value.trim()) {
+      ui.renderSearchDrop({ state: 'recent', recent: recentSearches() }, handlers);
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      ui.renderSearchDrop({ state: 'hidden' }, handlers);
+      input.blur();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!form.contains(e.target)) ui.renderSearchDrop({ state: 'hidden' }, handlers);
+  });
+
+  async function runSearch(raw) {
+    const q = String(raw || '').trim();
+    if (!q || state.searching) return;
+
+    state.searching = true;
+    form.classList.add('busy');
+    ui.renderSearchDrop({ state: 'searching', query: q }, handlers);
+
+    try {
+      const { results } = await flights.search(q);
+      // Give the render loop a tick so renderColor is populated.
+      flights.positions();
+      const enriched = results
+        .map((r) => flights.contacts.get(r.id))
+        .filter(Boolean);
+
+      if (!enriched.length) {
+        ui.renderSearchDrop({ state: 'empty', query: q }, handlers);
+      } else {
+        rememberSearch(q.toUpperCase());
+        if (enriched.length === 1) {
+          lockOn(enriched[0]);
+          ui.renderSearchDrop({ state: 'hidden' }, handlers);
+          input.blur();
+        } else {
+          ui.renderSearchDrop({ state: 'results', results: enriched, query: q }, handlers);
+        }
+      }
+    } catch {
+      ui.renderSearchDrop({ state: 'empty', query: q }, handlers);
+    } finally {
+      state.searching = false;
+      form.classList.remove('busy');
+    }
+  }
+}
+
+/** Select a contact, start following it, and take the camera there. */
+function lockOn(contact) {
+  select(contact);
+  $('#opt-rotate').checked = false;
+  globe.setAutoRotate(false);
+  if (flights.follow(contact)) {
+    ui.setFollowing(flights.followMeta);
+    ui.toast(`tracking ${contact.callsign} — network-wide`);
+  } else {
+    ui.toast(`${contact.callsign} has no Mode-S hex to follow`);
+  }
+  globe.flyTo(contact.lat, contact.lng, 0.42, 1600);
+  state.rideAfter = Date.now() + 2600;
+}
+
+/**
+ * Keep the camera over a followed aircraft without fighting the user.
+ *
+ * The guard matters: lockOn starts its own zoom transition, and recentring
+ * mid-flight would read the half-finished altitude and cancel the zoom.
+ * So riding only begins once that transition has landed, and afterwards it
+ * preserves whatever altitude the user has settled on.
+ */
+let lastRide = 0;
+function rideFollowed() {
+  const now = Date.now();
+  if (now < (state.rideAfter || 0) || now - lastRide < 2000) return;
+
+  const c = flights.followed();
+  if (!c) return;
+  const live = flights.positions().find((f) => f.id === c.id);
+  if (!live) return;
+
+  lastRide = now;
+  const pov = globe.pov();
+  if (haversineKm(pov, live) > 40) {
+    globe.flyTo(live.lat, live.lng, pov.altitude, 1800);
+  }
 }
 
 function setSensor(key) {

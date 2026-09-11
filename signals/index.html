@@ -32,6 +32,14 @@
     <span class="brand-name">SIGNALS</span>
     <span class="brand-sub">open-source intelligence globe</span>
   </div>
+  <form id="searchbar" class="searchbar" role="search" autocomplete="off">
+    <input id="q" type="search" inputmode="search" spellcheck="false" autocomplete="off"
+           placeholder="Find a flight — AI503, AIC503, VT-EXU, 800abc"
+           aria-label="Find a flight by number, callsign, registration or hex">
+    <button type="submit" class="btn" id="btn-find">FIND</button>
+    <div id="search-drop" class="search-drop" hidden></div>
+  </form>
+
   <div id="feedchips" class="chips"></div>
   <div class="top-actions">
     <button id="btn-share" class="btn ghost" title="Copy a link to this exact view">SHARE VIEW</button>
@@ -130,6 +138,13 @@
     <span class="note">altitudes exaggerated ×16 for legibility</span>
   </div>
 </footer>
+
+<div id="following" hidden>
+  <span class="track-dot"></span>
+  <span id="fl-name">—</span>
+  <span id="fl-state" class="fl-state">tracking</span>
+  <button id="fl-stop" aria-label="Stop following">RELEASE</button>
+</div>
 
 <div id="nowplaying" hidden>
   <span class="eq"><i></i><i></i><i></i></span>

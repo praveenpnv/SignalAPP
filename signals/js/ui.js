@@ -215,6 +215,83 @@ export function renderLaunches(list) {
     .join('');
 }
 
+// ─────────────────────────────────────────────────────── search
+
+export function renderSearchDrop({ state, results = [], query = '', recent = [] }, handlers) {
+  const el = $('#search-drop');
+
+  if (state === 'hidden') {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.hidden = false;
+
+  if (state === 'recent') {
+    if (!recent.length) {
+      el.hidden = true;
+      return;
+    }
+    el.innerHTML =
+      '<div class="sd-head">Recent</div><div class="sd-recent">' +
+      recent.map((r) => `<button type="button" data-recent="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('') +
+      '</div>';
+    el.querySelectorAll('[data-recent]').forEach((b) =>
+      b.addEventListener('click', () => handlers.onRecent(b.dataset.recent))
+    );
+    return;
+  }
+
+  if (state === 'searching') {
+    el.innerHTML = `<div class="sd-empty">Asking the networks about <b>${escapeHtml(query)}</b>…</div>`;
+    return;
+  }
+
+  if (state === 'empty') {
+    el.innerHTML = `<div class="sd-empty">
+      Nothing on the network matching <b>${escapeHtml(query)}</b>.<br>
+      ADS-B only shows aircraft that are airborne right now and within range of a
+      volunteer receiver — so a flight that hasn't departed, has already landed, or
+      is over open ocean simply isn't being heard. Try the ICAO callsign
+      (AIC503 rather than AI503) or the registration.
+    </div>`;
+    return;
+  }
+
+  el.innerHTML =
+    `<div class="sd-head">${results.length} match${results.length === 1 ? '' : 'es'}</div>` +
+    results
+      .map(
+        (c) => `<button type="button" class="sd-item" data-id="${escapeHtml(c.id)}"
+          style="border-left-color:${c.renderColor || '#4cc9f0'}">
+          <span class="sd-cs">${escapeHtml(c.callsign)}</span>
+          <span class="sd-alt">${c.onGround ? 'ON GROUND' : fmt.ft(c.altFt)}</span>
+          <span class="sd-meta">${escapeHtml(
+            [c.type || c.reg, c.desc, fmt.coord(c.lat, c.lng)].filter(Boolean).join(' · ')
+          )}</span>
+        </button>`
+      )
+      .join('');
+
+  el.querySelectorAll('.sd-item').forEach((b) =>
+    b.addEventListener('click', () => handlers.onPick(b.dataset.id))
+  );
+}
+
+export function setFollowing(meta) {
+  const el = $('#following');
+  if (!meta) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.classList.toggle('lost', !!meta.lost);
+  $('#fl-name').textContent = meta.callsign;
+  $('#fl-state').textContent = meta.lost
+    ? `signal lost · ${fmt.ago(meta.lastFix)}`
+    : 'tracking';
+}
+
 export function setNowPlaying(station) {
   const el = $('#nowplaying');
   if (!station) {

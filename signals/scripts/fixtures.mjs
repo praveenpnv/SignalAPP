@@ -93,3 +93,27 @@ export function launchFixture() {
     ],
   };
 }
+
+/** A single named aircraft, for the callsign / hex / registration lookups. */
+export function oneAircraft({ callsign = 'AIC503', hex = '800abc', reg = 'VT-EXU', lat = 19.1, lon = 72.9, tick = 0 } = {}) {
+  return {
+    ac: [
+      {
+        hex,
+        flight: `${callsign} `,
+        r: reg,
+        t: 'B788',
+        desc: 'Boeing 787-8 Dreamliner',
+        lat: lat + tick * 0.12,
+        lon: lon + tick * 0.18,
+        alt_baro: 37000,
+        gs: 468,
+        track: 305,
+        baro_rate: 0,
+        squawk: '2451',
+        category: 'A5',
+      },
+    ],
+    total: 1,
+  };
+}

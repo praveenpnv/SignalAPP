@@ -101,6 +101,125 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .chips { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+
+/* ── flight search ── */
+
+.searchbar {
+  position: relative;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex: 0 1 380px;
+  min-width: 200px;
+}
+.searchbar input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: rgba(8, 13, 22, 0.86);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+}
+.searchbar input::placeholder { color: var(--ink-faint); letter-spacing: 0; }
+.searchbar input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76, 201, 240, 0.13); }
+.searchbar input::-webkit-search-cancel-button { filter: invert(0.6); }
+.searchbar .btn { flex: none; }
+.searchbar.busy input { border-color: var(--accent-warm); }
+
+.search-drop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 12;
+  background: var(--panel-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+.search-drop .sd-head {
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+}
+.search-drop .sd-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 9px 10px;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.search-drop .sd-item:hover, .search-drop .sd-item:focus-visible {
+  background: rgba(76, 201, 240, 0.1);
+  border-left-color: var(--accent);
+  outline: none;
+}
+.search-drop .sd-cs { font-family: var(--mono); font-size: 12.5px; }
+.search-drop .sd-alt { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); text-align: right; }
+.search-drop .sd-meta { grid-column: 1 / -1; font-size: 10px; color: var(--ink-faint); }
+.search-drop .sd-empty { padding: 11px 10px; font-size: 11px; color: var(--ink-dim); line-height: 1.55; }
+.search-drop .sd-recent {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px;
+}
+.search-drop .sd-recent button {
+  font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: transparent; color: var(--ink-dim); cursor: pointer;
+}
+.search-drop .sd-recent button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── follow banner ── */
+
+#following {
+  position: fixed;
+  left: 50%;
+  top: 60px;
+  transform: translateX(-50%);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px 7px 12px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(76, 201, 240, 0.45);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-width: min(92vw, 480px);
+}
+#following .track-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+#following.lost { border-color: rgba(255, 183, 3, 0.5); }
+#following.lost .track-dot { background: var(--accent-warm); box-shadow: 0 0 10px var(--accent-warm); }
+#fl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-state { color: var(--ink-faint); font-size: 10px; flex: none; }
+#following button {
+  border: 1px solid var(--line-strong); background: transparent;
+  border-radius: 999px; padding: 3px 9px; font-size: 9.5px;
+  letter-spacing: 0.1em; cursor: pointer; flex: none;
+}
+#following button:hover { border-color: var(--accent); color: var(--accent); }
 .chip {
   font-family: var(--mono);
   font-size: 10px;
@@ -464,7 +583,7 @@ select#place-jump {
 #toast {
   position: fixed;
   left: 50%;
-  top: 62px;
+  top: 106px;   /* clears the follow banner, which sits at 60px */
   transform: translateX(-50%) translateY(-8px);
   z-index: 30;
   padding: 8px 14px;
@@ -486,11 +605,15 @@ select#place-jump {
 @media (max-width: 900px) {
   .brand-sub { display: none; }
   .panel { width: 232px; }
+  .searchbar { flex-basis: 300px; }
 }
 
 @media (max-width: 720px) {
   #topbar { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
+  .searchbar { order: 2; flex: 1 1 100%; }
   .chips { order: 3; width: 100%; }
+  .top-actions { order: 1; }
+  #following { top: auto; bottom: 132px; }
 
   /* Panels become bottom sheets. Only one is open at a time, so they
      never stack on top of each other on a small screen. */
@@ -518,6 +641,7 @@ select#place-jump {
   .sensors::-webkit-scrollbar { display: none; }
   .readout .note { display: none; }
   #nowplaying { bottom: 132px; }
+  #toast { top: 124px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

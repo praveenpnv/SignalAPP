@@ -14,13 +14,30 @@ Open the page and you are looking at real telemetry: ADS-B transponders from com
 
 | Layer | What you get | Source | Key |
 |---|---|---|---|
-| ✈️ **Aircraft** | Live ADS-B within 250 nm of wherever the camera is pointed: altitude-coloured glyphs oriented along their true heading, dead-reckoned between fixes, click-to-track with a trail and a full telemetry card | adsb.fi → airplanes.live → adsb.lol | none |
+| ✈️ **Aircraft** | Live ADS-B within 250 nm of wherever the camera is pointed: altitude-coloured glyphs oriented along their true heading, dead-reckoned between fixes, click-to-track with a trail and a full telemetry card. Plus **search and follow** — see below | adsb.fi → airplanes.live → adsb.lol | none |
 | 🛰️ **Satellites** | Space stations, brightest objects, GPS, weather and a Starlink slice — positions computed live with SGP4, one-revolution ground tracks, and pass predictions for your own location | CelesTrak | none |
 | 🌍 **Seismic** | Global earthquakes for the last 24 hours or the last week, sized by magnitude and coloured by depth, with expanding pulses on anything M5+ | USGS | none |
 | 📻 **World radio** | Hundreds of transmitters at their real coordinates. Click one and it plays | Radio Browser | none |
 | 🚀 **Launches** | The next rockets off the pad | Launch Library 2 | none |
 
 Six sensor looks (optical, NVG, thermal, ironbow, noir, CRT), a night or daylight basemap, a cinematic tour, and a share link that encodes the camera, the active layers and the sensor you were using.
+
+## Finding a specific flight
+
+Type into the search bar and the globe goes and gets it. Four kinds of identifier work:
+
+| You type | What happens |
+|---|---|
+| `AI503` | IATA flight number — translated to the ICAO callsign `AIC503` via a bundled table of ~120 carriers |
+| `AIC503` | ICAO callsign, used as-is |
+| `VT-EXU` | Registration |
+| `800abc` | Mode-S hex |
+
+Ambiguous input is not guessed at: `ABC123` is a plausible callsign *and* a plausible hex, so both are queried and whichever answers wins.
+
+Unlike the 250 nm scan, the lookup endpoints search the **whole network** — a flight over the Pacific is findable from a camera sitting over Bengaluru. On a hit the camera flies to the aircraft and **follows** it: that one Mode-S address is re-queried worldwide every 12 seconds and the camera rides along, so you can leave the tab open and watch it cross a continent. The banner reports `tracking`, or `signal lost` with the age of the last fix when it drops into a coverage gap; after four minutes with nothing heard it gives up rather than leave a ghost flying on dead reckoning alone. Recent searches are remembered locally.
+
+`/` focuses the search box. **RELEASE** in the banner ends the follow and hands the camera back.
 
 ## Run it
 
@@ -37,7 +54,7 @@ npm run serve      # http://localhost:4173
 
 ### Keyboard
 
-`1`–`6` sensor look · `F` aircraft · `S` satellites · `E` seismic · `R` radio · `T` tour · `Space` auto-rotate · `Esc` deselect
+`/` search · `1`–`6` sensor look · `F` aircraft · `S` satellites · `E` seismic · `R` radio · `T` tour · `Space` auto-rotate · `Esc` deselect
 
 ### Console
 
@@ -49,13 +66,15 @@ The app leaves a handle on `window.SIGNALS`. `SIGNALS.flights.contacts`, `SIGNAL
 index.html          markup and chrome
 css/style.css       the whole UI
 js/
-├── main.js         orchestration: boot, render loop, selection, sharing
+├── main.js         orchestration: boot, render loop, selection, search, sharing
 ├── config.js       every endpoint and tunable in one file
 ├── globe.js        globe.gl + three.js scene, glyph geometry and orientation
 ├── ui.js           DOM rendering — no network, no globe
+├── airlines.js     IATA→ICAO carrier table and the search-query parser
 ├── util.js         geodesy, fetch-with-timeout, TTL cache, formatting
 └── layers/
-    ├── flights.js  ADS-B ingest, source failover, dead reckoning, trails
+    ├── flights.js  ADS-B ingest, source failover, dead reckoning, trails,
+    │                network-wide lookup and follow mode
     ├── satellites.js  TLE parsing, SGP4 propagation, ground tracks, passes
     ├── quakes.js   USGS GeoJSON
     └── radio.js    Radio Browser mirrors and playback
@@ -80,13 +99,15 @@ node scripts/smoke.mjs            # boots the page offline, asserts it survives 
 node scripts/test-live.mjs        # intercepts every feed with fixtures and exercises the render path
 ```
 
-`test-live.mjs` checks aircraft ingest and source failover, SGP4 output against known ISS values, glyph heading recovery, dead reckoning actually moving contacts, roster and detail rendering, satellite ground tracks, radio markers, and the mobile bottom-sheet behaviour — and fails on any page error.
+`test-live.mjs` checks aircraft ingest and source failover, SGP4 output against known ISS values, glyph heading recovery, dead reckoning actually moving contacts, roster and detail rendering, satellite ground tracks, radio markers, the mobile bottom-sheet behaviour, and the whole search path — IATA→ICAO translation, registration lookup, the follow poller re-querying by hex, the camera lock-on landing on target, the honest no-match message, and release tearing the follow down. It fails on any page error.
 
 ## Honesty about the data
 
 This is an exploratory visualisation of public feeds, not an operational tool.
 
 - **Coverage is uneven.** Community ADS-B depends on volunteer receivers. Oceans and much of the global south are thin or empty. An absence of aircraft is an absence of receivers, not an absence of traffic.
+- **A flight you can't find may still be flying.** Search only sees aircraft that are airborne *right now* and within range of some receiver. Not yet departed, already landed, or mid-ocean all look identical to "no match", and the app says so rather than implying the flight doesn't exist.
+- **The flight number is not what's transmitted.** ADS-B carries a callsign, which is usually the ICAO form (`AIC503`) rather than the IATA number on your boarding pass (`AI503`). The translation table covers common carriers; anything missing is tried verbatim. Codeshares are filed under the operating carrier, so a ticket bought on one airline may be flying under another's callsign.
 - **Altitudes are exaggerated ×16** so they read at globe scale. The HUD says so on screen.
 - **"Military" is a hint.** It comes from the ICAO hex allocation block. It catches known ranges and misses plenty, and it is used only to colour a glyph.
 - **Positions between fixes are computed, not observed** — see dead reckoning above.

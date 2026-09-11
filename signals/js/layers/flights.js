@@ -15,7 +15,10 @@
  *     HUD reports which network is actually feeding you.
  */
 
-import { FLIGHT_SOURCES, FLIGHT_RADIUS_NM, FLIGHT_POLL_MS } from '../config.js';
+import {
+  FLIGHT_SOURCES, FLIGHT_RADIUS_NM, FLIGHT_POLL_MS, FOLLOW_POLL_MS, FOLLOW_GRACE_MS,
+} from '../config.js';
+import { parseQuery } from '../airlines.js';
 import { fetchJSON, haversineKm, project } from '../util.js';
 
 const TRAIL_MAX = 60;
@@ -34,6 +37,12 @@ export class FlightLayer {
     this.enabled = false;
     this._timer = null;
     this._inflight = false;
+
+    // Follow mode: one aircraft polled by hex network-wide, independent
+    // of where the camera happens to be pointing.
+    this.followId = null;
+    this.followMeta = null;   // { hex, callsign, lastFix, lost }
+    this._followTimer = null;
   }
 
   setFocus(lat, lng, { immediate = false } = {}) {
@@ -74,7 +83,7 @@ export class FlightLayer {
 
     for (const src of ordered) {
       try {
-        const data = await fetchJSON(src.url(lat, lng, FLIGHT_RADIUS_NM), {
+        const data = await fetchJSON(src.point(lat, lng, FLIGHT_RADIUS_NM), {
           timeout: 9000,
         });
         const raw = data.ac || data.aircraft || [];
@@ -140,8 +149,11 @@ export class FlightLayer {
       this.contacts.set(id, contact);
     }
 
-    // Drop contacts that have left the scan volume and gone stale.
+    // Drop contacts that have left the scan volume and gone stale. A
+    // followed aircraft is exempt — it is usually outside the scan area,
+    // which is the whole point of following it.
     for (const [id, c] of this.contacts) {
+      if (id === this.followId) continue;
       if (!seen.has(id) && now - c.fixAt > 90_000) this.contacts.delete(id);
     }
   }
@@ -175,6 +187,121 @@ export class FlightLayer {
       if (!this.contacts.has(id)) this._render.delete(id);
     }
     return out;
+  }
+
+  // ------------------------------------------------------------ search
+
+  /**
+   * Find an aircraft anywhere on the network by flight number, callsign,
+   * registration or Mode-S hex.
+   *
+   * The lookup endpoints are not bounded by the 250 nm scan radius, so a
+   * flight over the Pacific is findable from a camera over Bengaluru. It
+   * still has to be airborne and inside some volunteer receiver's
+   * coverage — an empty result means "not currently being heard", not
+   * "no such flight".
+   */
+  async search(input) {
+    const { query, candidates } = parseQuery(input);
+    if (!candidates.length) return { query, results: [], tried: [] };
+
+    const ordered = this.source
+      ? [
+          ...FLIGHT_SOURCES.filter((s) => s.name === this.source),
+          ...FLIGHT_SOURCES.filter((s) => s.name !== this.source),
+        ]
+      : FLIGHT_SOURCES;
+
+    const found = new Map();
+    const tried = [];
+
+    for (const cand of candidates) {
+      for (const src of ordered) {
+        const build = src[cand.kind];
+        if (!build) continue;
+        tried.push(`${src.name}/${cand.kind}`);
+        try {
+          const data = await fetchJSON(build(encodeURIComponent(cand.value)), { timeout: 8000 });
+          const raw = data.ac || data.aircraft || [];
+          if (!raw.length) break;          // this network answered, just no match
+          this._ingest(raw);
+          for (const a of raw) {
+            const id = a.hex || a.r;
+            const c = id && this.contacts.get(id);
+            if (c) found.set(c.id, c);
+          }
+          this.source = src.name;
+          break;                            // got an answer, next candidate
+        } catch {
+          // try the next network for this same candidate
+        }
+      }
+      if (found.size) break;                // first candidate that hits wins
+    }
+
+    return { query, results: [...found.values()], tried };
+  }
+
+  // ------------------------------------------------------------ follow
+
+  /** Lock onto one aircraft and keep it fed regardless of the camera. */
+  follow(contact) {
+    this.unfollow();
+    if (!contact?.hex) return false;
+    this.followId = contact.id;
+    this.followMeta = {
+      hex: contact.hex,
+      callsign: contact.callsign,
+      lastFix: contact.fixAt,
+      lost: false,
+    };
+    this._followTimer = setInterval(() => this._pollFollow(), FOLLOW_POLL_MS);
+    return true;
+  }
+
+  unfollow() {
+    clearInterval(this._followTimer);
+    this._followTimer = null;
+    this.followId = null;
+    this.followMeta = null;
+  }
+
+  async _pollFollow() {
+    if (!this.followMeta) return;
+    const { hex } = this.followMeta;
+
+    for (const src of FLIGHT_SOURCES) {
+      if (!src.hex) continue;
+      try {
+        const data = await fetchJSON(src.hex(encodeURIComponent(hex)), { timeout: 8000 });
+        const raw = (data.ac || data.aircraft || []).filter(
+          (a) => typeof a.lat === 'number' && typeof a.lon === 'number'
+        );
+        if (raw.length) {
+          this._ingest(raw);
+          this.followMeta.lastFix = Date.now();
+          this.followMeta.lost = false;
+          return;
+        }
+      } catch {
+        // next network
+      }
+    }
+
+    // Nobody is hearing it right now. Keep the last known position on
+    // screen for a while — coverage gaps are common over water — then
+    // give up rather than leave a ghost flying on dead reckoning.
+    this.followMeta.lost = true;
+    if (Date.now() - this.followMeta.lastFix > FOLLOW_GRACE_MS) {
+      const id = this.followId;
+      this.unfollow();
+      this.contacts.delete(id);
+      this._render.delete(id);
+    }
+  }
+
+  followed() {
+    return this.followId ? this.contacts.get(this.followId) : null;
   }
 
   /** Nearby contacts, closest first — the roster shown in the side panel. */

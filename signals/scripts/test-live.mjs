@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { tleFixture, adsbFixture, quakeFixture, radioFixture, launchFixture } from './fixtures.mjs';
+import { tleFixture, adsbFixture, quakeFixture, radioFixture, launchFixture, oneAircraft } from './fixtures.mjs';
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png' };
 const server = createServer(async (req, res) => {
@@ -35,12 +35,28 @@ page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' && !/ERR_TUNNEL|favicon/.test(m.text())) errors.push('console: ' + m.text()); });
 
 let adsbHits = 0;
+let hexHits = 0;
+const seenPaths = [];
 await page.route('**/*', async (route) => {
   const url = route.request().url();
   if (url.startsWith('http://localhost:4174')) return route.continue();
   const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
 
   if (/adsb|airplanes\.live/.test(url)) {
+    seenPaths.push(url.replace(/^https?:\/\//, ''));
+
+    // lookup endpoints — only AIC503 / its hex / its reg exist
+    const cs = url.match(/\/callsign\/([^/?]+)/);
+    if (cs) return json(decodeURIComponent(cs[1]) === 'AIC503' ? oneAircraft() : { ac: [] });
+    const hx = url.match(/\/(?:hex|icao)\/([^/?]+)/);
+    if (hx) {
+      if (decodeURIComponent(hx[1]).toLowerCase() !== '800abc') return json({ ac: [] });
+      hexHits++;
+      return json(oneAircraft({ tick: hexHits }));
+    }
+    const rg = url.match(/\/(?:reg|registration)\/([^/?]+)/);
+    if (rg) return json(decodeURIComponent(rg[1]) === 'VT-EXU' ? oneAircraft() : { ac: [] });
+
     adsbHits++;
     const m = url.match(/lat\/(-?[\d.]+)\/lon\/(-?[\d.]+)/) || url.match(/point\/(-?[\d.]+)\/(-?[\d.]+)/);
     return json(adsbFixture(m ? +m[1] : 12.97, m ? +m[2] : 77.59));
@@ -187,7 +203,80 @@ const m3 = await page.evaluate(() => ({
 }));
 await page.screenshot({ path: 'scripts/_live-mobile.png' });
 
-console.log(JSON.stringify({ afterLoad, drift, heading, detail, satSel, satDetail, radioState, mobile: { atLoad: m1, afterLeft: m2, afterRight: m3 }, adsbHits, errors }, null, 1));
+// ── flight search by IATA number, and follow mode ──────────────────
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.evaluate(() => [...document.querySelectorAll('.panel')].forEach((p) => p.classList.remove('collapsed')));
+await page.waitForTimeout(500);
+
+await page.fill('#q', 'AI503');
+await page.click('#btn-find');
+await page.waitForTimeout(5200);   // let the lock-on zoom land
+
+const search = await page.evaluate(() => {
+  const S = window.SIGNALS;
+  return {
+    selected: S.state.selected?.callsign,
+    followId: S.flights.followId,
+    followCallsign: S.flights.followMeta?.callsign,
+    bannerVisible: !document.querySelector('#following').hidden,
+    bannerText: document.querySelector('#fl-name')?.textContent,
+    detailHeading: document.querySelector('#detail h3')?.textContent,
+    autoRotate: S.globe.globe.controls().autoRotate,
+    pov: (() => { const p = S.globe.pov(); return { lat: +p.lat.toFixed(2), lng: +p.lng.toFixed(2), alt: +p.altitude.toFixed(2) }; })(),
+    target: (() => { const c = S.flights.followed(); return c ? { lat: +c.lat.toFixed(2), lng: +c.lng.toFixed(2) } : null; })(),
+    toastTop: getComputedStyle(document.querySelector('#toast')).top,
+    bannerTop: getComputedStyle(document.querySelector('#following')).top,
+  };
+});
+await page.screenshot({ path: 'scripts/_live-search.png' });
+
+// the follow poller should keep re-querying by hex and the contact should move
+const before = await page.evaluate(() => {
+  const c = window.SIGNALS.flights.followed();
+  return { lat: c.lat, lng: c.lng };
+});
+await page.waitForTimeout(14000);
+const followTick = await page.evaluate((b) => {
+  const c = window.SIGNALS.flights.followed();
+  return {
+    stillFollowing: !!c,
+    movedSinceFix: Math.abs(c.lat - b.lat) + Math.abs(c.lng - b.lng) > 1e-4,
+    lost: window.SIGNALS.flights.followMeta?.lost,
+  };
+}, before);
+
+// a query with no match must explain itself rather than fail silently
+await page.fill('#q', 'ZZ9999');
+await page.click('#btn-find');
+await page.waitForTimeout(2500);
+const noMatch = await page.evaluate(() => ({
+  dropVisible: !document.querySelector('#search-drop').hidden,
+  text: document.querySelector('#search-drop')?.textContent.trim().slice(0, 90),
+}));
+
+// release, and confirm the banner and poller stop
+await page.click('#fl-stop');
+await page.waitForTimeout(600);
+const released = await page.evaluate(() => ({
+  followId: window.SIGNALS.flights.followId,
+  banner: document.querySelector('#following').hidden,
+}));
+
+// recent searches should have been remembered
+await page.fill('#q', '');
+await page.click('#q');
+await page.waitForTimeout(400);
+const recent = await page.evaluate(() =>
+  [...document.querySelectorAll('#search-drop [data-recent]')].map((b) => b.textContent)
+);
+
+// registration and hex paths
+await page.fill('#q', 'VT-EXU');
+await page.click('#btn-find');
+await page.waitForTimeout(2200);
+const byReg = await page.evaluate(() => window.SIGNALS.flights.followMeta?.callsign);
+
+console.log(JSON.stringify({ afterLoad, drift, heading, detail, satSel, satDetail, radioState, mobile: { atLoad: m1, afterLeft: m2, afterRight: m3 }, search, followTick, noMatch, released, recent, byReg, adsbHits, hexHits, pointPaths: [...new Set(seenPaths.filter((p) => /lat\/|point\//.test(p)))].slice(0, 3), errors }, null, 1));
 
 await browser.close();
 server.close();
