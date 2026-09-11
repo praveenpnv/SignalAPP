@@ -14,6 +14,7 @@ import { RadioLayer } from './layers/radio.js';
 import {
   PLACES, SENSORS, LAUNCH_URL, LAUNCH_CACHE_MIN, SAT_STEP_MS,
 } from './config.js';
+import { proxyBase, setProxy } from './config.js';
 import { $, $$, fetchJSON, cache, fmt, haversineKm, debounce } from './util.js';
 import * as ui from './ui.js';
 
@@ -365,6 +366,8 @@ function wireControls() {
     ui.toast('released');
   });
 
+  wireProxyBox();
+
   $('#btn-locate').addEventListener('click', locate);
   $('#btn-tour').addEventListener('click', toggleTour);
   $('#btn-share').addEventListener('click', share);
@@ -436,6 +439,72 @@ function wireControls() {
 }
 
 /**
+ * The proxy box. Deploying the Worker is the only part that needs doing
+ * elsewhere — pointing this build at it does not require a rebuild, so the
+ * value lives in localStorage and can also arrive as ?proxy=<url>.
+ */
+function wireProxyBox() {
+  const input = $('#proxy-url');
+  const stateEl = $('#proxy-state');
+
+  const fromUrl = new URLSearchParams(location.search).get('proxy');
+  if (fromUrl) setProxy(fromUrl);
+
+  const paint = () => {
+    const base = proxyBase();
+    input.value = base;
+    if (!base) {
+      stateEl.textContent = 'Not set — aircraft layer is dark.';
+      stateEl.className = 'hint';
+    } else {
+      stateEl.textContent = `Routing aircraft feeds via ${base}`;
+      stateEl.className = 'hint ok';
+    }
+  };
+  paint();
+
+  $('#btn-proxy-save').addEventListener('click', async () => {
+    const url = input.value.trim();
+    if (url && !/^https:\/\/\S+$/.test(url)) {
+      stateEl.textContent = 'Needs to be a full https:// URL.';
+      stateEl.className = 'hint bad';
+      return;
+    }
+    setProxy(url);
+    paint();
+
+    if (!url) {
+      ui.toast('proxy cleared');
+      return;
+    }
+
+    stateEl.textContent = 'Testing…';
+    stateEl.className = 'hint';
+    await flights.retry();
+
+    if (flights.status === 'live') {
+      stateEl.textContent = `Working — feeding from ${flights.source}.`;
+      stateEl.className = 'hint ok';
+      $('#hint-flights').textContent = 'ADS-B within 250 nm of the view centre.';
+      $('#hint-flights').className = 'hint';
+      ui.toast('aircraft layer is live');
+    } else {
+      stateEl.textContent =
+        'Still blocked. Check the Worker is deployed and that opening ' +
+        'its URL with ?u=<an adsb.fi URL> returns JSON.';
+      stateEl.className = 'hint bad';
+      ui.toast('proxy did not answer — see the note under the box');
+    }
+  });
+
+  $('#btn-proxy-clear').addEventListener('click', () => {
+    setProxy('');
+    input.value = '';
+    paint();
+  });
+}
+
+/**
  * Say it out loud, once, if the aircraft feeds cannot be reached. A
  * silently empty layer reads as "quiet skies", which is a lie.
  */
@@ -456,6 +525,7 @@ function warnIfAircraftBlocked() {
         '<code>Access-Control-Allow-Origin</code> header. Deploy ' +
         '<code>worker/adsb-proxy.js</code> and set <code>ADSB_PROXY</code>.';
       $('#hint-flights').classList.add('warn');
+      $('#proxy-grp')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, 3000);
   setTimeout(() => clearInterval(check), 120_000);

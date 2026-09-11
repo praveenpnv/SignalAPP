@@ -66,6 +66,20 @@ export class FlightLayer {
     this.status = 'off';
   }
 
+  /**
+   * Force a poll now, even if one is already in flight.
+   *
+   * The ordinary guard makes a second poll a no-op, which is right for the
+   * timer but wrong for a user pressing retry after changing the proxy —
+   * they would get the stale result and conclude their fix had failed.
+   */
+  async retry() {
+    this._inflight = false;
+    this.blocked = false;
+    await this.poll();
+    return this.status;
+  }
+
   async poll() {
     if (!this.focus || this._inflight || !this.enabled) return;
     this._inflight = true;

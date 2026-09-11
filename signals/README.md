@@ -58,21 +58,47 @@ Verified rather than assumed. From one page, one moment:
 
 OpenSky Network and adsb.one behave the same way, and the public CORS relays were either gone or rejected the request. There is no keyless live-position feed that a browser can read cross-origin.
 
-**The fix is a proxy you own.** `worker/adsb-proxy.js` is a ~40-line Cloudflare Worker that forwards the request and adds the header. It is not an open proxy: only those three hosts, GET only, 10-second edge cache so it stays inside their 1-request-per-second etiquette. Cloudflare's free tier is 100,000 requests a day, which is far more than this will ever use.
+**The fix is a proxy you own** — something on a server that fetches the data and adds the header. Four ways, all free, pick one.
 
-```bash
-npm create cloudflare@latest signals-adsb -- --type=hello-world
-# replace src/index.js with worker/adsb-proxy.js
-npx wrangler deploy
+### Option 1 — host the site somewhere with functions (recommended)
+
+Netlify and Vercel both deploy straight from a GitHub repo in the browser, and both give you serverless functions on the *same origin* as the page. Same origin means no cross-origin request happens at all and CORS never enters into it. One account instead of two, one deploy instead of two.
+
+Both adapters are in this repo already:
+
+| Host | File | Set `ADSB_PROXY` to |
+|---|---|---|
+| Netlify | `netlify/functions/adsb.js` + `netlify.toml` | `/api/adsb` |
+| Vercel | `api/adsb.js` + `vercel.json` | `/api/adsb` |
+
+Connect the repo at [app.netlify.com](https://app.netlify.com) or [vercel.com/new](https://vercel.com/new), let it build, done. GitHub Pages can keep serving the old copy or you can turn it off.
+
+### Option 2 — Cloudflare Worker, keep GitHub Pages
+
+`worker/adsb-proxy.js`. At [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → Create → Create Worker → Deploy → Edit code → paste the file → Deploy. Free tier is 100,000 requests a day.
+
+### Option 3 — Val Town, if you want it done in a minute
+
+[val.town](https://www.val.town) signs in with GitHub, and an HTTP val is a public URL the moment you paste code into the browser. No CLI, no project, no build. Paste `worker/adsb-proxy.js` (the `export default { async fetch(request) }` shape is what an HTTP val expects) and use the `.web.val.run` URL it gives you. Free-tier limits apply.
+
+### Option 4 — don't
+
+Leave it unset. The aircraft layer reports that it is blocked and why; satellites, seismic and radio carry on. What it will never do is show an empty sky and let you assume it is quiet.
+
+### Wiring it up
+
+Whichever you pick, check the proxy first — this should return JSON:
+
+```
+https://<your-proxy>?u=https%3A%2F%2Fopendata.adsb.fi%2Fapi%2Fv2%2Fcallsign%2FIGO2453
 ```
 
-Then set the URL it prints in `js/config.js` and rebuild:
+Then point the app at it, either way:
 
-```js
-export const ADSB_PROXY = 'https://signals-adsb.yourname.workers.dev';
-```
+- **No rebuild.** Paste the URL into the *ADS-B proxy* box in the View panel and press SAVE & RETRY — it re-polls immediately and says whether it worked. Or open the site with `?proxy=<url>`. Stored in that browser only; good for testing, and for a deployment you cannot rebuild.
+- **For every visitor.** Set `ADSB_PROXY` in `js/config.js` and `npm run build`. Baked into the bundle, so anyone opening the link gets aircraft with no setup.
 
-Leave `ADSB_PROXY` empty and nothing breaks — the aircraft layer reports that it is blocked and why, and the other three layers carry on. What it will never do is show an empty sky and let you assume it is quiet.
+A same-origin path works here too: on Netlify or Vercel, `ADSB_PROXY = '/api/adsb'`.
 
 ## Run it
 
@@ -115,6 +141,8 @@ js/
     └── radio.js    Radio Browser mirrors and playback
 worker/
 └── adsb-proxy.js   Cloudflare Worker adding the CORS header ADS-B omits
+api/adsb.js         the same proxy as a Vercel function (same-origin)
+netlify/functions/adsb.js   and as a Netlify function (same-origin)
 ```
 
 Four things in here were more interesting than they look:

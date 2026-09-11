@@ -101,6 +101,24 @@
       </select>
     </section>
 
+    <section class="grp" id="proxy-grp">
+      <h2>ADS-B proxy</h2>
+      <p class="hint" style="margin-left:0">
+        The aircraft feeds send no CORS header, so a browser can't read them
+        directly. Paste your deployed <code>worker/adsb-proxy.js</code> URL here.
+      </p>
+      <div class="proxy-row">
+        <input id="proxy-url" type="url" inputmode="url" spellcheck="false"
+               placeholder="https://your-worker.workers.dev"
+               aria-label="ADS-B proxy URL">
+      </div>
+      <div class="controls-row">
+        <button class="btn" id="btn-proxy-save">SAVE &amp; RETRY</button>
+        <button class="btn ghost" id="btn-proxy-clear">CLEAR</button>
+      </div>
+      <p class="hint" id="proxy-state" style="margin-left:0">Not set — aircraft layer is dark.</p>
+    </section>
+
     <section class="grp" id="launch-grp">
       <h2>Next launches</h2>
       <ul class="launches" id="launch-list"><li class="muted">loading…</li></ul>

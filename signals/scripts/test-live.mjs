@@ -44,8 +44,15 @@ let adsbHits = 0;
 let hexHits = 0;
 const seenPaths = [];
 await page.route('**/*', async (route) => {
-  const url = route.request().url();
-  if (url.startsWith('http://localhost:4174')) return route.continue();
+  let url = route.request().url();
+
+  // Stand in for the Netlify/Vercel function: /api/adsb?u=<upstream>
+  // unwraps to the upstream URL and is answered exactly as it would be.
+  if (url.startsWith('http://localhost:4174/api/adsb')) {
+    url = new URL(url).searchParams.get('u') || '';
+  } else if (url.startsWith('http://localhost:4174')) {
+    return route.continue();
+  }
   const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
 
   if (/adsb|airplanes\.live/.test(url)) {
@@ -285,7 +292,10 @@ const byReg = await page.evaluate(() => window.SIGNALS.flights.followMeta?.calls
 // ── transport failure must not be reported as "flight not found" ──
 // Simulate exactly what CORS does to us: the request never completes.
 expectFailures = true;
-await page.route(/adsb|airplanes\.live/, (route) => route.abort('failed'));
+await page.route(
+  (url) => /\/api\/adsb|opendata\.adsb\.fi|api\.adsb\.lol|api\.airplanes\.live/.test(url.toString()),
+  (route) => route.abort('failed')
+);
 
 await page.fill('#q', 'AIC503');
 await page.click('#btn-find');
@@ -296,7 +306,43 @@ const blocked = await page.evaluate(() => ({
   layerBlocked: window.SIGNALS.flights.blocked,
 }));
 
-console.log(JSON.stringify({ afterLoad, drift, heading, detail, satSel, satDetail, radioState, mobile: { atLoad: m1, afterLeft: m2, afterRight: m3 }, search, followTick, noMatch, released, recent, byReg, blocked, adsbHits, hexHits, pointPaths: [...new Set(seenPaths.filter((p) => /lat\/|point\//.test(p)))].slice(0, 3), errors }, null, 1));
+// ── the in-app proxy box: saving a URL must re-route the feeds ──
+// Direct calls stay dead (as they are in a real browser); only the
+// proxied ones answer. Matching on origin, not substring — the proxy URL
+// carries the upstream host inside its ?u= parameter.
+await page.unroute(
+  (url) => /\/api\/adsb|opendata\.adsb\.fi|api\.adsb\.lol|api\.airplanes\.live/.test(url.toString())
+);
+await page.route(/my-worker\.example\.dev/, (route) => {
+  const u = new URL(route.request().url()).searchParams.get('u') || '';
+  if (/callsign/.test(u)) return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(oneAircraft()) });
+  return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(adsbFixture(12.97, 77.59, 12)) });
+});
+// direct (unproxied) aircraft calls stay dead, as they are in a real browser
+await page.route(
+  (url) => /^https:\/\/(opendata\.adsb\.fi|api\.adsb\.lol|api\.airplanes\.live)\//.test(url.toString()),
+  (route) => route.abort('failed')
+);
+
+await page.evaluate(() => [...document.querySelectorAll('.panel')].forEach((p) => p.classList.remove('collapsed')));
+await page.fill('#proxy-url', 'https://my-worker.example.dev');
+await page.click('#btn-proxy-save');
+await page.waitForTimeout(4000);
+const proxied = await page.evaluate(() => ({
+  state: document.querySelector('#proxy-state')?.textContent.trim().slice(0, 60),
+  stateClass: document.querySelector('#proxy-state')?.className,
+  status: window.SIGNALS.flights.status,
+  contacts: window.SIGNALS.flights.contacts.size,
+  hintCleared: !document.querySelector('#hint-flights').classList.contains('warn'),
+}));
+
+// bad input is rejected rather than silently stored
+await page.fill('#proxy-url', 'not-a-url');
+await page.click('#btn-proxy-save');
+await page.waitForTimeout(500);
+const badInput = await page.evaluate(() => document.querySelector('#proxy-state')?.textContent.trim());
+
+console.log(JSON.stringify({ afterLoad, drift, heading, detail, satSel, satDetail, radioState, mobile: { atLoad: m1, afterLeft: m2, afterRight: m3 }, search, followTick, noMatch, released, recent, byReg, blocked, proxied, badInput, adsbHits, hexHits, pointPaths: [...new Set(seenPaths.filter((p) => /lat\/|point\//.test(p)))].slice(0, 3), errors }, null, 1));
 
 await browser.close();
 server.close();

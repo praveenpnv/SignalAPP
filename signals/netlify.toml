@@ -1,0 +1,19 @@
+# Netlify: build the bundle, serve the site, expose the proxy at /api/adsb.
+#
+# If this repo is nested (the site lives in a subfolder), set that folder
+# as the "Base directory" in Site configuration → Build & deploy, so this
+# file and the functions directory are found.
+#
+# --include=dev matters: Netlify sets NODE_ENV=production, which would
+# otherwise skip esbuild and leave dist/app.js stale.
+[build]
+  publish = "."
+  command = "npm install --include=dev && npm run assets && npm run build"
+
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/adsb"
+  to = "/.netlify/functions/adsb"
+  status = 200

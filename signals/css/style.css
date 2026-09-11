@@ -402,6 +402,22 @@ select#place-jump {
   cursor: pointer;
 }
 
+.proxy-row { margin: 8px 0 0; }
+.proxy-row input {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink);
+  background: rgba(10, 16, 27, 0.9);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+}
+.proxy-row input:focus { border-color: var(--accent); }
+#proxy-state.ok { color: var(--good); }
+#proxy-state.bad { color: var(--bad); }
+
 .launches { list-style: none; margin: 0; padding: 0; font-size: 11px; }
 .launches li { padding: 5px 0; border-bottom: 1px dashed var(--line); line-height: 1.4; }
 .launches li:last-child { border-bottom: 0; }

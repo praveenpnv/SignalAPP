@@ -16,17 +16,59 @@ export const GLOBE_RADIUS = 100;
  * page read their responses. Satellites, earthquakes and radio all send
  * the header and work directly; aircraft do not and cannot.
  *
- * Leave this empty and the aircraft layer stays dark, saying so plainly.
- * Set it to your own deployed `worker/adsb-proxy.js` URL (Cloudflare's
- * free tier covers this many times over) and the layer comes alive:
+ * Two ways to point at your own deployed `worker/adsb-proxy.js`:
  *
- *   export const ADSB_PROXY = 'https://signals-adsb.yourname.workers.dev';
+ *   1. Bake it in here, so every visitor gets it. Defaults to the
+ *      same-origin '/api/adsb' served by the Netlify or Vercel function
+ *      in this repo — those hosts rebuild on push, so editing this file
+ *      is enough. Set it to '' if you host somewhere with no function,
+ *      and the aircraft layer will say it is blocked rather than 404.
+ *   2. Set it at runtime, no rebuild: open the site with
+ *      `?proxy=https://your-worker.workers.dev`, or paste the URL into
+ *      the ADS-B PROXY box in the View panel. Saved in this browser only.
+ *
+ * The runtime value wins when both are set.
  */
-export const ADSB_PROXY = '';
+export const ADSB_PROXY = '/api/adsb';
 
-/** Route a URL through the proxy when one is configured. */
-export const via = (url) =>
-  ADSB_PROXY ? `${ADSB_PROXY.replace(/\/$/, '')}/?u=${encodeURIComponent(url)}` : url;
+const PROXY_KEY = 'signals:adsb-proxy';
+
+/** Whatever proxy is in force right now, or '' for none. */
+export function proxyBase() {
+  try {
+    const saved = localStorage.getItem(PROXY_KEY);
+    if (saved) return saved;
+  } catch {
+    /* private mode — fall back to the built-in value */
+  }
+  return ADSB_PROXY;
+}
+
+/** Store a proxy URL for this browser. Pass '' to clear it. */
+export function setProxy(url) {
+  const clean = String(url || '').trim().replace(/\/+$/, '');
+  try {
+    if (!clean) localStorage.removeItem(PROXY_KEY);
+    else localStorage.setItem(PROXY_KEY, clean);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Route a URL through the proxy when one is configured.
+ *
+ * The base may be an absolute worker URL or a same-origin path such as
+ * `/api/adsb`, so no slash is inserted — appending the query directly
+ * works for both and avoids a redirect on hosts that care.
+ */
+export const via = (url) => {
+  const base = proxyBase();
+  if (!base) return url;
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}u=${encodeURIComponent(url)}`;
+};
 
 /** Earth textures, served from a CORS-friendly CDN. */
 export const TEXTURES = {
